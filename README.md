@@ -1,19 +1,24 @@
-# Python Project: Automating Work
-This repository contains a Python project aimed at automating work tasks and serving as a learning resource to teach Python to beginners(my friend Brett). The project focuses on practical automation applications that can streamline various processes.
+# 👋 Hi, I'm Michael Akeson — Automation Engineer & Builder
 
-## Project Overview
-The goal of this project is to introduce Python programming concepts through hands-on experience with real-world automation scenarios. By following the project, your friend will gain practical skills in Python while simultaneously automating work tasks.
+**I design, deliver, and scale intelligent automation systems**.
 
-## The project covers various topics, including:
+---
 
--Basic Python syntax and data structures
+## 🚀 What I Build (In Production)
 
--File handling and manipulation
+| Tool | Count | Impact |
+|------|-------|--------|
+| **UiPath RPA Bots** | **8+** | Automated invoices, reconciliations, HR onboarding, compliance checks |
+| **Alteryx ETL Workflows** | **20+** | Daily finance reporting, data cleansing, Snowflake loads |
+| **Python Micro-Tools** | **N/A** | Excel → XML, PDF → Word, Exel -> Pandas -> Validation → Snowflake |
+| **CICD Pipeline** | **1 enterprise-grade** | Auto-detects UiPath/Alteryx → packages → test → deploy dev → approve → deploy prod → notifies |
 
--Web scraping and data extraction
+---
 
--Automating repetitive tasks using scripts
+## 🛠 Tech Stack I Own
+```text
+RPA:      UiPath (Orchestrator, AI Center, CLI)
+ETL:      Alteryx (Server, Python Tool, Scheduler)
+Data:     Snowflake, SQL, dbt-style logic
+Scripting: Python (pandas, snowflake-connector, FastAPI, pytest)
 
--Interacting with APIs
-
--Creating GUI applications
