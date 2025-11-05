@@ -1,0 +1,853 @@
+name: Release Triggered CICD
+
+on:
+  release:
+    types: [published]
+
+
+env:
+  # replace with orchestrator values
+  #MY_SECRET: **PlaceHolder**
+  ORCH_URL: "https://cloud.uipath.com/"
+  Tenant: **PlaceHolder**
+  Tenant2: **PlaceHolder**
+  AccountForApp: **PlaceHolder**
+  ApplicationScope: "OR.Assets OR.BackgroundTasks OR.Execution OR.Folders OR.Jobs OR.Machines.Read OR.Monitoring OR.Queues OR.Robots.Read OR.Settings.Read OR.TestSetExecutions OR.TestSets OR.TestSetSchedules OR.Users.Read" 
+  Dev_ORCH_CLIENT_ID:  **PlaceHolder**
+  Dev_ORCH_USER_KEY:  **PlaceHolder**
+  GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  Webhook:**PlaceHolder**
+
+  
+  Dev_ALteryx_Key: **PlaceHolder**
+  Dev_ALteryx_Secret: **PlaceHolder**
+  Prod_ALteryx_Key: **PlaceHolder**
+  Prod_ALteryx_Secret: **PlaceHolder**
+
+jobs:
+#Package-Test & Project-------------------------------------------------------------------------------------------------------------------------------
+  Locate-and-Package-Project:
+    runs-on: windows-latest
+    
+    outputs:
+      my_output: ${{ steps.Find-Project-Folder-step.outputs.MY_FOLDER }}
+      ProjectNumber: ${{ steps.extract-prefix.outputs.prefix_Out }}
+      PROJECT_TYPE: ${{ steps.Find-Project-Folder-step.outputs.PROJECT_TYPE }}
+      FILE_PATH: ${{ steps.Find-Project-Folder-step.outputs.FILE_PATH }}
+      workflow_credentials: ${{ steps.AlteryxConfig.outputs.workflow_credentials }}
+      workflow_name: ${{ steps.AlteryxConfig.outputs.workflow_name }}
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+ # Install .NET 6.0 Windows Desktop Runtime
+      - name: Install .NET 6.0 Runtime
+        run: |
+          $url = "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/6.0.36/windowsdesktop-runtime-6.0.36-win-x64.exe"
+          $output = "dotnet-runtime-installer.exe"
+          Invoke-WebRequest -Uri $url -OutFile $output
+          Start-Process -FilePath $output -ArgumentList "/install /quiet /norestart" -Wait
+          Remove-Item $output
+
+      - name: Verify .NET Runtime
+        run: |
+          dotnet --list-runtimes
+
+
+
+  # Exstract project number
+      - name: Extract first three characters
+        id: extract-prefix
+        env:
+          #USER_MESSAGE: ${{ github.event.inputs.user_message }}
+          USER_MESSAGE: ${{ github.event.release.name }}
+        shell: pwsh
+        run: |
+          if ($env:USER_MESSAGE -match 'v\d+\.\d+\.\d+-([A-Z0-9]+)-') {
+            $prefix = $matches[1]
+            Write-Output "Extracted project number: $prefix"
+          } else {
+              Write-Error "No project number found in USER_MESSAGE"
+          }
+          echo "prefix_Out=$prefix" >> $env:GITHUB_OUTPUT
+          echo "PREFIX=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+
+
+      - name: FindMatchingFolder
+        id: Find-Project-Folder-step
+        shell: pwsh
+        run: |
+          $prefix = $env:PREFIX
+          $jsonFiles = Get-ChildItem -Path . -Recurse -Include *.yxzp,*project.json
+          
+          $projectType = ""
+          $matchedFolder = ""
+          
+          foreach ($file in $jsonFiles) {
+              $fullPath = $file.FullName
+              $parentFolderName = $file.Directory.Name
+              
+              Write-Host $parentFolderName
+
+          
+              if ($fullPath -like "*project.json" -and $parentFolderName -like "$prefix*") {
+                  # UiPath
+                  $matchedFolder = Split-Path $fullPath -Parent
+                  $filePath = $fullPath
+                  $projectType = "uipath"
+                  break
+              } elseif ($fullPath -like "*.yxzp" -and $parentFolderName -like "$prefix*") {
+                  # Alteryx
+                  $matchedFolder = Split-Path $fullPath -Parent
+                  $filePath = $fullPath
+                  $projectType = "alteryx"
+                  break
+              }
+          }
+
+          if ($matchedFolder) {
+            echo "Found $projectType project file in folder starting with prefix '$prefix': $matchedFolder"
+            echo "MY_FOLDER=$matchedFolder" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "MY_FOLDER=$matchedFolder" >> $env:GITHUB_OUTPUT
+            echo "PROJECT_TYPE=$projectType" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "PROJECT_TYPE=$projectType" >> $env:GITHUB_OUTPUT
+            echo "FILE_PATH=$filePath" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "FILE_PATH=$filePath" >> $env:GITHUB_OUTPUT 
+            
+          } else {
+            echo "No project file (.json or .yxzp) found in a folder starting with prefix '$prefix'"
+            exit 1
+          }
+
+
+      - name: Set Temporary Folder Path
+        id: set-temp-folder
+        run: |
+          $tempFolder="${{ runner.temp }}\Packages"
+          echo "TEMP_FOLDER=$tempFolder" | Out-File -FilePath $env:GITHUB_ENV -Append
+          #echo "::set-output name=TEMP_FOLDER::$tempFolder"
+          echo "TEMP_FOLDER=$tempFolder" >> "$GITHUB_OUTPUT" #update to not use set-output
+          
+        shell: pwsh
+  
+      - name: Debug Temp Folder Value
+        run: Write-Host "Temp Directory:$env:TEMP_FOLDER"
+        shell: pwsh
+  
+      - name: Create Temporary Directory
+        run: New-Item -Path "$env:TEMP_FOLDER" -ItemType "directory" -Force
+        shell: pwsh
+  
+      - name: Verify Folder Creation
+        run: Get-ChildItem -Path "$env:TEMP_FOLDER"
+        shell: pwsh
+
+
+      #PowerShell Step--------------------------------------------
+      - name: Pack UiPath Project
+        if: env.PROJECT_TYPE == 'uipath'
+        shell: pwsh
+        run: |
+          Write-Host "Call PowerShell Pack"
+          $MY_FOLDER = "${{ steps.Find-Project-Folder-step.outputs.MY_FOLDER }}"
+          & "$env:GITHUB_WORKSPACE/DevOps-Scripts/Scrips/AIGI-Pack.ps1" -Project_Path "$MY_FOLDER\\project.json" -Output "$env:Temp_Folder" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope" -JobNumber "${{ github.run_number }}"
+          
+
+      #upload file
+      - name: Upload output packages as artifact
+        if: env.PROJECT_TYPE == 'uipath'
+        uses: actions/upload-artifact@v4
+        with:
+          name: output-packages
+          path: "${{ env.TEMP_FOLDER }}/**"
+          retention-days: 10
+          
+      - name: Read Alteryx Config File
+        id: AlteryxConfig
+        if: env.PROJECT_TYPE == 'alteryx'
+          
+        shell: pwsh
+        run: |
+          Write-Host "${{ steps.Find-Project-Folder-step.outputs.MY_FOLDER }}"
+          Write-Host "${{ steps.Find-Project-Folder-step.outputs.PROJECT_TYPE }}"
+          $myFolder = "${{ steps.Find-Project-Folder-step.outputs.MY_FOLDER }}"
+          $configPath = "$env:MY_FOLDER/config.json"
+          $config = Get-Content -LiteralPath "$configPath" | ConvertFrom-Json
+          
+          Write-Host "Workflow Credentials: $($config.workflow_credentials)"
+          Write-Host "Workflow Name: $($config.workflow_name)"
+          #echo "workflow_credentials=($config.workflow_credentials)" >> $env:GITHUB_OUTPUT
+          #echo "workflow_name=($config.workflow_name)" >> $env:GITHUB_OUTPUT
+
+          echo "workflow_credentials=$($config.workflow_credentials)" >> $env:GITHUB_OUTPUT
+          echo "workflow_name=$($config.workflow_name)" >> $env:GITHUB_OUTPUT
+
+
+      - name: Print Project Details
+        shell: pwsh
+        run: |
+          Write-Host "${{ steps.Find-Project-Folder-step.outputs.MY_FOLDER }}"
+          Write-Host "${{ steps.Find-Project-Folder-step.outputs.PROJECT_TYPE }}"
+
+
+
+#Test-Dev-Package-------------------------------------------------------------------------------------------------------------------------------
+  Test-Dev-Package:
+    if: ${{ needs.Locate-and-Package-Project.outputs.PROJECT_TYPE == 'uipath' }}
+    runs-on: windows-latest
+    needs:
+      - Locate-and-Package-Project
+    env:
+      ProjectNumber: ${{ needs.Locate-and-Package-Project.outputs.ProjectNumber }}
+    outputs:
+    # true  → exit code 0 (tests passed)
+    # false → exit code ≠0 (tests failed)
+      test_passed: ${{ steps.run-test.outputs.test_passed }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+  # Install .NET 6.0 Windows Desktop Runtime
+      - name: Install .NET 6.0 Runtime
+        run: |
+          $url = "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/6.0.36/windowsdesktop-runtime-6.0.36-win-x64.exe"
+          $output = "dotnet-runtime-installer.exe"
+          Invoke-WebRequest -Uri $url -OutFile $output
+          Start-Process -FilePath $output -ArgumentList "/install /quiet /norestart" -Wait
+          Remove-Item $output
+
+      - name: Verify .NET Runtime
+        run: |
+          dotnet --list-runtimes
+  
+  # Run UiPath Test----------------------------------------------------------------------------------------
+      - name: Run UiPath Test
+        id: run-test
+        shell: pwsh
+        run: |
+          Write-Host "Running UiPath Test Set..."
+          $MY_FOLDER = "${{ steps.Find-Project-Folder-step.outputs.MY_FOLDER }}"
+          & "$env:GITHUB_WORKSPACE/DevOps-Scripts/Scrips/AIGI-Test.ps1" -Project_Path "TestSet-$env:ProjectNumber" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope"
+          # Capture exit code
+          $exitCode = $LASTEXITCODE
+          Write-Host "Script exited with code: $exitCode"
+  
+          $passed =  $exitCode.ToString()
+          echo "test_passed=$passed" >> $env:GITHUB_OUTPUT
+
+
+
+##Deploy DEV-----------------------------------------------------------------------------  
+  Deploy-Uipath-Dev:
+    if: ${{ needs.Locate-and-Package-Project.outputs.PROJECT_TYPE == 'uipath' }}
+    runs-on: windows-latest
+    needs: 
+      - Locate-and-Package-Project
+      - Test-Dev-Package
+
+    env:
+      MY_FOLDER: ${{ needs.Locate-and-Package-Project.outputs.my_output }}
+      ProjectNumber: ${{ needs.Locate-and-Package-Project.outputs.ProjectNumber }}
+      PROJECT_TYPE: ${{ needs.Locate-and-Package-Project.outputs.PROJECT_TYPE }}
+      FILE_PATH: ${{ needs.Locate-and-Package-Project.outputs.FILE_PATH }}
+    steps:
+      # Re-checkout repository to ensure the workspace is valid
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+    # Install .NET 6.0 Windows Desktop Runtime
+      - name: Install .NET 6.0 Runtime
+        run: |
+          $url = "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/6.0.36/windowsdesktop-runtime-6.0.36-win-x64.exe"
+          $output = "dotnet-runtime-installer.exe"
+          Invoke-WebRequest -Uri $url -OutFile $output
+          Start-Process -FilePath $output -ArgumentList "/install /quiet /norestart" -Wait
+          Remove-Item $output
+
+      - name: Verify .NET Runtime
+        run: |
+          dotnet --list-runtimes
+  
+      - name: Download packaged artifact
+        if: ${{ env.PROJECT_TYPE == 'uipath' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: output-packages
+          path: "${{ runner.temp }}/Downloaded-Packages"
+  
+    
+      # PowerShell Step--------------------------------------------
+      - name: Deploy UiPath Project
+        shell: pwsh
+        run: |
+          Write-Host "Call PowerShell Deploy"
+          & "$env:GITHUB_WORKSPACE\\DevOps-Scripts\\Scrips\\AIGI-Deploy.ps1" -Project_Path "${{ runner.temp }}/Downloaded-Packages" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope"
+    
+    
+    # Update in Dev Orchestrator PowerShell
+      - name: Update UiPath Project
+        shell: pwsh
+        run: |
+          Write-Host "Call PowerShell Update"
+          & "$env:GITHUB_WORKSPACE\\DevOps-Scripts\\Scrips\\AIGI-Update_All-UiPath.ps1" -ProcessNumber "$env:ProjectNumber" -client_id "$env:Dev_ORCH_CLIENT_ID" -client_secret "$env:Dev_ORCH_USER_KEY" -Tenant "$env:Tenant"
+
+
+
+
+
+
+
+##Deploy Alteryx DEV-----------------------------------------------------------------------------  
+  Deploy-Alteryx-Dev:
+    if: ${{ needs.Locate-and-Package-Project.outputs.PROJECT_TYPE == 'alteryx' }}
+    #runs-on: windows-latest
+    runs-on: [self-hosted, windows]
+    
+    needs: 
+      - Locate-and-Package-Project
+
+    env:
+      MY_FOLDER: ${{ needs.Locate-and-Package-Project.outputs.my_output }}
+      ProjectNumber: ${{ needs.Locate-and-Package-Project.outputs.ProjectNumber }}
+      PROJECT_TYPE: ${{ needs.Locate-and-Package-Project.outputs.PROJECT_TYPE }}
+      FILE_PATH: ${{ needs.Locate-and-Package-Project.outputs.FILE_PATH }}
+      workflow_name: ${{ needs.Locate-and-Package-Project.outputs.workflow_name }}
+      workflow_credentials: ${{ needs.Locate-and-Package-Project.outputs.workflow_credentials }}
+    steps:
+      # Re-checkout repository to ensure the workspace is valid
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: FindMatchingFolder
+        id: Find-Project-Folder-step
+        shell: powershell
+        run: |
+          $prefix = $env:ProjectNumber
+          $jsonFiles = Get-ChildItem -Path . -Recurse -Include *.yxzp
+          
+          $matchedFolder = ""
+          $filePath = ""
+      
+          foreach ($file in $jsonFiles) {
+              $fullPath = $file.FullName
+              $parentFolderName = $file.Directory.Name
+              
+              Write-Host "Checking folder: $fullPath"
+      
+              if ($fullPath -like "*project.json" -and $parentFolderName -like "$prefix*") {
+                  # UiPath
+                  $matchedFolder = Split-Path $fullPath -Parent
+                  $filePath = $fullPath
+                  $projectType = "uipath"
+                  break
+              } elseif ($fullPath -like "*.yxzp" -and $parentFolderName -like "$prefix*") {
+                  # Alteryx
+                  $matchedFolder = Split-Path $fullPath -Parent
+                  $filePath = $fullPath
+                  $projectType = "alteryx"
+                  break
+              }
+          }
+      
+          if ($matchedFolder) {
+            Write-Host "Found $projectType project file in folder starting with prefix '$prefix': $matchedFolder"
+            
+            "MY_FOLDER=$matchedFolder" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "MY_FOLDER=$matchedFolder" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            
+            "FILE_PATH=$filePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "FILE_PATH=$filePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+          else {
+            Write-Error "No project file (.json or .yxzp) found in a folder starting with prefix '$prefix'"
+            exit 1
+          }
+
+      # Deploy Alteryx Dev
+      - name: Deploy Alteryx Project
+        #shell: pwsh
+        shell: powershell
+        run: |
+          Write-Host "Deploying Alteryx project"
+          Write-Host "env:$MY_FOLDER"
+          
+          #$configPath = "$env:MY_FOLDER/config.json"
+          $myFolder = $env:MY_FOLDER
+          $workflow_credentials = $env:workflow_credentials
+          $workflow_name = $env:workflow_name
+
+          Write-Host "Workflow Credentials: $workflow_credentials"
+          Write-Host "Workflow Name: $workflow_name"
+
+
+          Write-Host "Deploying .yxzp file from $MY_FOLDER to Alteryx Server"
+          # Example placeholder: Call Alteryx CLI or API for deployment
+          
+          & "$env:GITHUB_WORKSPACE\DevOps-Scripts\Scrips\AIGI-Alteryx-Deploy.ps1" -ClientId "$env:Dev_ALteryx_Key" -ClientSecret "$env:Dev_ALteryx_Secret" -WorkflowFilePath "$env:FILE_PATH" -ProjectNumber "$env:ProjectNumber" -WorkflowName "$env:workflow_name" -WorkflowCredentials "$env:workflow_credentials"
+
+
+
+
+
+
+  #Send Notification-----------------------------------------------------------------------   
+  Send-Approval-Request:
+    runs-on: windows-latest
+    if: |
+      always() &&
+      needs.Locate-and-Package-Project.result == 'success' &&
+      (
+        needs.Deploy-Uipath-Dev.result == 'success' ||
+        needs.Deploy-Alteryx-Dev.result == 'success'
+      )
+      
+    needs: 
+      - Locate-and-Package-Project
+      - Deploy-Uipath-Dev
+      - Deploy-Alteryx-Dev
+    env:
+      #USER_MESSAGE: ${{ github.event.inputs.user_message }}
+      USER_MESSAGE: ${{ github.event.release.name }}
+
+    steps:
+      - name: Send Adaptive Card to Microsoft Teams
+        shell: pwsh
+        run: |
+          $body = @"
+          {
+          "type": "message",
+          "attachments": [
+            {
+              "contentType": "application/vnd.microsoft.card.adaptive",
+              "content": {
+                "`$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                "type": "AdaptiveCard",
+                "version": "1.4",
+                "body": [
+                  {
+                    "type": "TextBlock",
+                    "text": "🚨 *Production Deployment Approval Required*",
+                    "wrap": true,
+                    "weight": "Bolder",
+                    "size": "Large"
+                  },
+                  {
+                    "type": "TextBlock",
+                    "text": "**$env:USER_MESSAGE** is awaiting approval to proceed with deployment to **production**.",
+                    "wrap": true
+                  },
+                  {
+                    "type": "ActionSet",
+                    "actions": [
+                      {
+                        "type": "Action.OpenUrl",
+                        "title": "Review and Approve Deployment",
+                        "url": "$env:GITHUB_RUN_URL"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]}
+          "@
+          curl -H "Content-Type: application/json" -d $body $env:Webhook
+
+
+
+
+
+
+##Wait for Approval-----------------------------------------------------------------------------  
+  Wait-for-approval:
+    runs-on: ubuntu-latest
+    if: |
+      always() &&
+      needs.Send-Approval-Request.result == 'success'
+    needs:
+      - Send-Approval-Request
+
+    environment:
+      name: Production
+      # Triggers the approval UI in GitHub Actions
+    steps:
+      - name: Wait for approval
+        run: echo "Approved to proceed with the release steps."
+
+
+
+
+
+
+##Deploy Prod-----------------------------------------------------------------------------  
+  Deploy-Uipath-Prod:
+    if: |
+      always() &&
+      needs.Wait-for-approval.result == 'success' &&
+      needs. Deploy-Uipath-Dev.result == 'success'
+      
+    runs-on: windows-latest
+    needs:
+      - Locate-and-Package-Project
+      - Wait-for-approval
+    
+    env:
+      MY_FOLDER: ${{ needs.Locate-and-Package-Project.outputs.my_output }}
+      ProjectNumber: ${{ needs.Locate-and-Package-Project.outputs.ProjectNumber }}
+
+    steps:
+      # Re-checkout repository to ensure the workspace is valid
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate GitHub App Token
+        uses: tibdex/github-app-token@v2
+        id: generate-token
+        with:
+         app_id: ${{ secrets.AIGI_SS_AUTOM_GITHUB_CI_APP_ID }}
+         private_key: ${{ secrets.AIGI_SS_AUTOM_GITHUB_CI_APP_PRIVATE_KEY }}
+        
+
+
+      - name: Checkout Repository Branch
+        uses: actions/checkout@v4.1.1
+        with:
+         ref: ${{ inputs.checkout_ref }}
+         persist-credentials: true
+         token: ${{ steps.generate-token.outputs.token }}
+
+  # Install .NET 6.0 Windows Desktop Runtime
+      - name: Install .NET 6.0 Runtime
+        run: |
+          $url = "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/6.0.36/windowsdesktop-runtime-6.0.36-win-x64.exe"
+          $output = "dotnet-runtime-installer.exe"
+          Invoke-WebRequest -Uri $url -OutFile $output
+          Start-Process -FilePath $output -ArgumentList "/install /quiet /norestart" -Wait
+          Remove-Item $output
+
+      - name: Verify .NET Runtime
+        run: |
+          dotnet --list-runtimes
+  
+      - name: Download packaged artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: output-packages
+          path: "${{ runner.temp }}/Downloaded-Packages"
+  
+      - name: List downloaded files
+        run: dir "${{ runner.temp }}/Downloaded-Packages"
+      
+      
+      # PowerShell Step--------------------------------------------
+      - name: Deploy UiPath Project
+        shell: pwsh
+        run: |
+          Write-Host "Call PowerShell Deploy"
+          & "$env:GITHUB_WORKSPACE\\DevOps-Scripts\\Scrips\\AIGI-Deploy.ps1" -Project_Path "${{ runner.temp }}/Downloaded-Packages" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant2" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope"
+      
+      
+    #Update Process in Orchestrator--------------------------------------------
+      - name: Display ProjectNumber
+        shell: pwsh
+        run: |
+          Write-Host "Project Directory: $env:MY_FOLDER"
+          Write-Host "ProjectNumber: $env:ProjectNumber"
+      # Update in Prod Orchestrator PowerShell
+      - name: Update UiPath Project
+        shell: pwsh
+        run: |
+          Write-Host "Call PowerShell Update"
+          & "$env:GITHUB_WORKSPACE\\DevOps-Scripts\\Scrips\\AIGI-Update_All-UiPath.ps1" -ProcessNumber "$env:ProjectNumber" -client_id "$env:Dev_ORCH_CLIENT_ID" -client_secret "$env:Dev_ORCH_USER_KEY" -Tenant "$env:Tenant2"
+
+
+
+
+
+
+
+
+
+##Deploy Alteryx Prod-----------------------------------------------------------------------------  
+  Deploy-Alteryx-Prod:
+    if: |
+      always() &&
+      needs.Wait-for-approval.result == 'success' &&
+      needs.Deploy-Alteryx-Dev.result == 'success'
+
+    runs-on: [self-hosted, windows]
+    
+    needs: 
+      - Locate-and-Package-Project
+      - Deploy-Alteryx-Dev
+      - Wait-for-approval
+
+    env:
+      MY_FOLDER: ${{ needs.Locate-and-Package-Project.outputs.my_output }}
+      ProjectNumber: ${{ needs.Locate-and-Package-Project.outputs.ProjectNumber }}
+      PROJECT_TYPE: ${{ needs.Locate-and-Package-Project.outputs.PROJECT_TYPE }}
+      FILE_PATH: ${{ needs.Locate-and-Package-Project.outputs.FILE_PATH }}
+      workflow_name: ${{ needs.Locate-and-Package-Project.outputs.workflow_name }}
+      workflow_credentials: ${{ needs.Locate-and-Package-Project.outputs.workflow_credentials }}
+    steps:
+      # Re-checkout repository to ensure the workspace is valid
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: FindMatchingFolder
+        id: Find-Project-Folder-step
+        shell: powershell
+        run: |
+          $prefix = $env:ProjectNumber
+          $jsonFiles = Get-ChildItem -Path . -Recurse -Include *.yxzp
+          
+          $matchedFolder = ""
+          $filePath = ""
+      
+          foreach ($file in $jsonFiles) {
+              $fullPath = $file.FullName
+              $parentFolderName = $file.Directory.Name
+              
+              Write-Host "Checking folder: $fullPath"
+      
+              if ($fullPath -like "*project.json" -and $parentFolderName -like "$prefix*") {
+                  # UiPath
+                  $matchedFolder = Split-Path $fullPath -Parent
+                  $filePath = $fullPath
+                  $projectType = "uipath"
+                  break
+              } elseif ($fullPath -like "*.yxzp" -and $parentFolderName -like "$prefix*") {
+                  # Alteryx
+                  $matchedFolder = Split-Path $fullPath -Parent
+                  $filePath = $fullPath
+                  $projectType = "alteryx"
+                  break
+              }
+          }
+      
+          if ($matchedFolder) {
+            Write-Host "Found $projectType project file in folder starting with prefix '$prefix': $matchedFolder"
+            
+            "MY_FOLDER=$matchedFolder" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "MY_FOLDER=$matchedFolder" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            
+            "FILE_PATH=$filePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "FILE_PATH=$filePath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+          else {
+            Write-Error "No project file (.json or .yxzp) found in a folder starting with prefix '$prefix'"
+            exit 1
+          }
+
+      - name: Deploy Alteryx Project
+        #shell: pwsh
+        shell: powershell
+        run: |
+          Write-Host "Deploying Alteryx project"
+          Write-Host "env:$MY_FOLDER"
+          
+          #$configPath = "$env:MY_FOLDER/config.json"
+          $myFolder = $env:MY_FOLDER
+          $workflow_credentials = $env:workflow_credentials
+          $workflow_name = $env:workflow_name
+
+          Write-Host "Workflow Credentials: $workflow_credentials"
+          Write-Host "Workflow Name: $workflow_name"
+
+
+          Write-Host "Deploying .yxzp file from $MY_FOLDER to Alteryx Server"
+          # Example placeholder: Call Alteryx CLI or API for deployment
+          
+          & "$env:GITHUB_WORKSPACE\DevOps-Scripts\Scrips\AIGI-Alteryx-Deploy.ps1" -ClientId "$env:Prod_ALteryx_Key" -ClientSecret "$env:Prod_ALteryx_Secret" -WorkflowFilePath "$env:FILE_PATH" -ProjectNumber "$env:ProjectNumber" -WorkflowName "$env:workflow_name" -Environment  "prod" -WorkflowCredentials "$env:workflow_credentials"
+
+
+
+
+
+
+
+
+
+
+# Check Jobs Status and Send Message------------------------------------------------
+  Check-Failure:
+    runs-on: windows-latest
+    
+    if: always() # <-- ensures this job always runs, regardless of other job results
+    
+    needs:
+      - Wait-for-approval
+      - Test-Dev-Package
+      - Locate-and-Package-Project
+      - Deploy-Uipath-Prod
+      - Deploy-Uipath-Dev
+      - Deploy-Alteryx-Dev
+      - Deploy-Alteryx-Prod
+
+    outputs:
+      failure-header: ${{ steps.set-message.outputs.failure-header }}
+  
+    steps:
+      - name: Print job statuses
+        run: |
+          echo "Package-Project: ${{ needs.Locate-and-Package-Project.result }}"
+          echo "Deploy-Project-Prod: ${{ needs.Deploy-Project-Prod.result }}"
+          echo "Deploy-Project-Dev: ${{ needs.Deploy-Project-Dev.result }}"
+          echo "Deploy-Project-Dev: ${{ needs.Wait-for-approval.result }}"
+          echo "Test-Dev-Package: ${{ needs.Test-Dev-Package.result }}"
+          echo "Test-Case-Packaged: ${{ needs.Locate-and-Package-Project.outputs.NoTestPackage }}"
+      
+      - name: Determine failure reason
+        env:
+          USER_MESSAGE: ${{ github.event.release.name }}
+          #USER_MESSAGE: ${{ github.event.inputs.user_message }}
+        id: set-message
+        shell: bash
+        run: |
+          # Track failed and passed jobs
+          failed=()
+          passed=()
+
+          # Evaluate each job result explicitly
+          if [ "${{ needs.Locate-and-Package-Project.result }}" != "success" ]; then
+            job1="❌ Locate-and-Package-Project"
+            failed+=(job1)
+          else
+            job1="✅ Locate-and-Package-Project"
+            passed+=(job1)
+          fi
+      
+          if [ "${{ needs.Deploy-Uipath-Dev.result }}" = "success" ] || [ "${{ needs.Deploy-Alteryx-Dev.result }}" = "success" ]; then
+              job2="✅ Deploy to Dev"
+              passed+=(job2)
+          else
+              job2="❌ Deploy to Dev"
+              failed+=(job2)
+          fi
+      
+          if [ "${{ needs.Deploy-Alteryx-Prod.result }}" = "success" ] || [ "${{ needs.Deploy-Uipath-Prod.result }}" = "success" ]; then
+            job3="✅ Deploy to Prod"
+            passed+=(job3)
+          else
+            job3="❌ Deploy to Prod"
+            failed+=(job3)
+          fi
+
+          if [ "${{ needs.Wait-for-approval.result }}" != "success" ]; then
+            approval="❌ Release Denied"
+            failed+=(approval)
+          else
+            approval="✅ Release Approved"
+            passed+=(approval)
+          fi
+
+          if [ "${{ needs.Locate-and-Package-Project.outputs.PROJECT_TYPE }}" = "uipath" ]; then
+            if [ "${{ needs.Test-Dev-Package.outputs.test_passed }}" = "0" ]; then
+              job4="✅ Test Dev Package"
+              passed+=("$job4")
+            elif [ "${{ needs.Test-Dev-Package.outputs.test_passed }}" = "2" ]; then
+              job4="🟡 No Test Set found"
+              passed+=("$job4")
+            else
+              job4="❌ Test Dev Package"
+              failed+=("$job4")
+            fi
+          fi
+          
+          # setheader--------------------------------------------------------------------      
+          header="🟢 **${USER_MESSAGE}**"
+
+          if [ "${#failed[@]}" -gt 0 ]; then
+            header="🔴 **${USER_MESSAGE}**"
+          fi  
+          
+          if [ "${#failed[@]}" -eq 1 ] && [ "${#passed[@]}" -eq 2 ]; then
+            header="🟡 **${USER_MESSAGE}**"
+          fi
+
+          echo "failure-header=$header" >> $GITHUB_OUTPUT
+          echo "job1=$job1" >> $GITHUB_OUTPUT
+          echo "job2=$job2" >> $GITHUB_OUTPUT
+          echo "approval=$approval" >> $GITHUB_OUTPUT
+          echo "job3=$job3" >> $GITHUB_OUTPUT
+          echo "job4=$job4" >> $GITHUB_OUTPUT
+
+  #Send Message----------------------------------------------------------------------------------------
+      - name: Send Failure Notice
+        shell: pwsh
+        run: |
+
+          $header = "${{ steps.set-message.outputs.failure-header }}"
+          $job1 = "${{ steps.set-message.outputs.job1 }}"
+          $job4 = "${{ steps.set-message.outputs.job4 }}"
+          $job2 = "${{ steps.set-message.outputs.job2 }}"
+          $job3 = "${{ steps.set-message.outputs.job3 }}"
+          $approval = "${{ steps.set-message.outputs.approval }}"
+
+          
+          # Build card as a hashtable
+          $card = @{
+            type = "message"
+            attachments = @(@{
+              contentType = "application/vnd.microsoft.card.adaptive"
+              content = @{
+                '$schema' = "http://adaptivecards.io/schemas/adaptive-card.json"
+                type = "AdaptiveCard"
+                version = "1.4"
+                body = @(
+                  @{
+                    type = "TextBlock"
+                    text = $header
+                    wrap = $true
+                    weight = "Bolder"
+                    size = "Large"
+                  },
+                  
+                  @{
+                    type = "TextBlock"
+                    text = $job1
+                    wrap = $true
+                  },
+                  @{
+                    type = "TextBlock"
+                    text = $job4
+                    wrap = $true
+                  },
+                  @{
+                    type = "TextBlock"
+                    text = $job2
+                    wrap = $true
+                  },
+                  @{
+                    type = "TextBlock"
+                    text = $approval
+                    wrap = $true
+                  },
+                  @{
+                    type = "TextBlock"
+                    text = $job3
+                    wrap = $true
+                  },            
+                  @{
+                    type = "ActionSet"
+                    actions = @(
+                      @{
+                        type = "Action.OpenUrl"
+                        title = "View Job"
+                        url = $env:GITHUB_RUN_URL
+                      }
+                    )
+                  }
+                )
+              }
+            })
+          }
+          
+          # Convert to JSON, preserving newlines
+          $body = $card | ConvertTo-Json -Depth 10 -Compress
+          
+          # Send it
+          curl -H "Content-Type: application/json" -d $body $env:Webhook
