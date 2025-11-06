@@ -1,0 +1,169 @@
+name: Run Test Set UiPath Orchestrator
+
+on:
+  workflow_dispatch:
+    inputs:
+      user_message:
+        description: "Enter a message"
+        required: true
+        default: "v00.0.0-###-ProjectName"
+
+
+env:
+  # replace with orchestrator values
+  #MY_SECRET: ###########  # Exposing the secret as an env variable
+  ORCH_URL: "https://cloud.uipath.com/"
+  Tenant: "####_DEV"
+  Tenant2: "####_PROD"
+  AccountForApp: "##################"
+  ApplicationScope: "OR.Assets OR.BackgroundTasks OR.Execution OR.Folders OR.Jobs OR.Machines.Read OR.Monitoring OR.Queues OR.Robots.Read OR.Settings.Read OR.TestSetExecutions OR.TestSets OR.TestSetSchedules OR.Users.Read" 
+  #ApplicationScope: "OR.Assets OR.Execution OR.Folders OR.Jobs OR.Queues"
+  Dev_ORCH_CLIENT_ID:  ##################
+  Dev_ORCH_USER_KEY:  ##################
+  GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  Webhook: ##################
+
+jobs:
+
+#Locate-and-Package-Project-------------------------------------------------------------------------------------------------------------------------------
+  Locate-and-Package-Project:
+    runs-on: windows-latest
+    outputs:
+      my_output: ${{ steps.Find-Project-Folder-step.outputs.MY_FOLDER }}
+      ProjectNumber: ${{ steps.extract-prefix.outputs.prefix_Out }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+  # Install .NET 6.0 Windows Desktop Runtime
+      - name: Install .NET 6.0 Runtime
+        run: |
+          $url = "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/6.0.36/windowsdesktop-runtime-6.0.36-win-x64.exe"
+          $output = "dotnet-runtime-installer.exe"
+          Invoke-WebRequest -Uri $url -OutFile $output
+          Start-Process -FilePath $output -ArgumentList "/install /quiet /norestart" -Wait
+          Remove-Item $output
+
+      - name: Verify .NET Runtime
+        run: |
+          dotnet --list-runtimes
+
+      - name: Extract first three characters
+        id: extract-prefix
+        env:
+          USER_MESSAGE: ${{ github.event.inputs.user_message }}
+        shell: pwsh
+        run: |
+          if ($env:USER_MESSAGE -match 'v\d+\.\d+\.\d+-([A-Z0-9]+)-') {
+            $prefix = $matches[1]
+            Write-Output "Extracted project number: $prefix"
+          } else {
+              Write-Error "No project number found in USER_MESSAGE"
+          }
+          echo "prefix_Out=$prefix" >> $env:GITHUB_OUTPUT
+          echo "PREFIX=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: FindMatchingFolder
+        id: Find-Project-Folder-step
+        shell: pwsh
+        run: |
+          $prefix = $env:PREFIX
+          $jsonFiles = Get-ChildItem -Path . -Recurse -Filter project.json
+          $matchedFolder = $null
+          foreach ($file in $jsonFiles) {
+            $parentFolderName = $file.Directory.Name
+            if ($parentFolderName -like "$prefix*") {
+              $matchedFolder = Split-Path $file.FullName -Parent
+              break
+            }
+          }
+      
+          if ($matchedFolder) {
+            echo "Found project.json in folder starting with prefix '$prefix': $matchedFolder"
+            echo "MY_FOLDER=$matchedFolder" | Out-File -FilePath $env:GITHUB_ENV -Append
+            echo "MY_FOLDER=$matchedFolder" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "No project.json found in a folder starting with prefix '$prefix'"
+            exit 1
+          }
+
+    #Pack -----------------------------------------------------------------------------
+      - name: Set Temporary Folder Path
+        id: set-temp-folder
+        run: |
+          $tempFolder="${{ runner.temp }}\Packages"
+          echo "TEMP_FOLDER=$tempFolder" | Out-File -FilePath $env:GITHUB_ENV -Append
+          #echo "::set-output name=TEMP_FOLDER::$tempFolder"
+          echo "TEMP_FOLDER=$tempFolder" >> "$GITHUB_OUTPUT" #update to not use set-output
+          
+        shell: pwsh
+  
+      - name: Debug Temp Folder Value
+        run: Write-Host "Temp Directory:$env:TEMP_FOLDER"
+        shell: pwsh
+  
+      - name: Create Temporary Directory
+        run: New-Item -Path "$env:TEMP_FOLDER" -ItemType "directory" -Force
+        shell: pwsh
+  
+      - name: Verify Folder Creation
+        run: Get-ChildItem -Path "$env:TEMP_FOLDER"
+        shell: pwsh
+
+
+      #PowerShell Step--------------------------------------------
+      - name: Pack UiPath Project
+        shell: pwsh
+        run: |
+          Write-Host "Call PowerShell Pack"
+          $MY_FOLDER = "${{ steps.Find-Project-Folder-step.outputs.MY_FOLDER }}"
+          & "$env:GITHUB_WORKSPACE/DevOps-Scripts/Scrips/UiPath-Pack-Test.ps1" -Project_Path "$MY_FOLDER\\project.json" -Output "$env:Temp_Folder" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope" -JobNumber "${{ github.run_number }}"
+          
+      
+      - name: List files in Temp Folder
+        run: dir $env:TEMP_FOLDER
+
+      #upload file
+      - name: Upload output packages as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: output-packages
+          path: "${{ env.TEMP_FOLDER }}/**"
+          retention-days: 10
+
+
+
+
+#Test-Dev-Package-------------------------------------------------------------------------------------------------------------------------------
+  Test-Dev-Package:
+    runs-on: windows-latest
+    needs:
+      - Locate-and-Package-Project
+    env:
+      ProjectNumber: ${{ needs.Locate-and-Package-Project.outputs.ProjectNumber }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+  # Install .NET 6.0 Windows Desktop Runtime
+      - name: Install .NET 6.0 Runtime
+        run: |
+          $url = "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/6.0.36/windowsdesktop-runtime-6.0.36-win-x64.exe"
+          $output = "dotnet-runtime-installer.exe"
+          Invoke-WebRequest -Uri $url -OutFile $output
+          Start-Process -FilePath $output -ArgumentList "/install /quiet /norestart" -Wait
+          Remove-Item $output
+
+      - name: Verify .NET Runtime
+        run: |
+          dotnet --list-runtimes
+  
+  # Run UiPath Test----------------------------------------------------------------------------------------
+      - name: Run UiPath Test
+        shell: pwsh
+        run: |
+          Write-Host "Running UiPath Test Set..."
+          $MY_FOLDER = "${{ steps.Find-Project-Folder-step.outputs.MY_FOLDER }}"
+          & "$env:GITHUB_WORKSPACE/DevOps-Scripts/Scripts/UiPath-Test.ps1" -Project_Path "TestSet-$env:ProjectNumber" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope"
+         
