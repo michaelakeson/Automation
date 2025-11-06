@@ -240,7 +240,7 @@ jobs:
 
 
 
-##Deploy DEV-----------------------------------------------------------------------------  
+## DEV-----------------------------------------------------------------------------  
   Deploy-Uipath-Dev:
     if: ${{ needs.Locate-and-Package-Project.outputs.PROJECT_TYPE == 'uipath' }}
     runs-on: windows-latest
@@ -284,7 +284,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Call PowerShell Deploy"
-          & "$env:GITHUB_WORKSPACE\\DevOps-Scripts\\Scripts\\Deploy.ps1" -Project_Path "${{ runner.temp }}/Downloaded-Packages" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope"
+          & "$env:GITHUB_WORKSPACE\\DevOps-Scripts\\Scripts\\UiPath-Deploy.ps1" -Project_Path "${{ runner.temp }}/Downloaded-Packages" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope"
     
     
     # Update in Dev Orchestrator PowerShell
@@ -547,7 +547,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Call PowerShell Deploy"
-          & "$env:GITHUB_WORKSPACE\\DevOps-Scripts\\Scripts\\Deploy.ps1" -Project_Path "${{ runner.temp }}/Downloaded-Packages" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant2" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope"
+          & "$env:GITHUB_WORKSPACE\\DevOps-Scripts\\Scripts\\UiPath-Deploy.ps1" -Project_Path "${{ runner.temp }}/Downloaded-Packages" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant2" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope"
       
       
     #Update Process in Orchestrator--------------------------------------------
