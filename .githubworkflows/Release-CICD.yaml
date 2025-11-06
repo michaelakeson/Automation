@@ -153,7 +153,6 @@ jobs:
           Write-Host "Call PowerShell Pack"
           $MY_FOLDER = "${{ steps.Find-Project-Folder-step.outputs.MY_FOLDER }}"
           & "$env:GITHUB_WORKSPACE/DevOps-Scripts/Scripts/Pack.ps1" -Project_Path "$MY_FOLDER\\project.json" -Output "$env:Temp_Folder" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope" -JobNumber "${{ github.run_number }}"
-          
 
       #upload file
       - name: Upload output packages as artifact
@@ -230,7 +229,9 @@ jobs:
         run: |
           Write-Host "Running UiPath Test Set..."
           $MY_FOLDER = "${{ steps.Find-Project-Folder-step.outputs.MY_FOLDER }}"
-          & "$env:GITHUB_WORKSPACE/DevOps-Scripts/Scripts/Test.ps1" -Project_Path "TestSet-$env:ProjectNumber" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope"
+# Test are deployed manvualy under test set name TestSet-###. this just runs test set in dev gallery. 
+#Execute Uipath Test
+          & "$env:GITHUB_WORKSPACE/DevOps-Scripts/Scripts/UiPath-Test.ps1" -Project_Path "TestSet-$env:ProjectNumber" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope"
           # Capture exit code
           $exitCode = $LASTEXITCODE
           Write-Host "Script exited with code: $exitCode"
