@@ -152,7 +152,7 @@ jobs:
         run: |
           Write-Host "Call PowerShell Pack"
           $MY_FOLDER = "${{ steps.Find-Project-Folder-step.outputs.MY_FOLDER }}"
-          & "$env:GITHUB_WORKSPACE/DevOps-Scripts/Scrips/AIGI-Pack.ps1" -Project_Path "$MY_FOLDER\\project.json" -Output "$env:Temp_Folder" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope" -JobNumber "${{ github.run_number }}"
+          & "$env:GITHUB_WORKSPACE/DevOps-Scripts/Scripts/Pack.ps1" -Project_Path "$MY_FOLDER\\project.json" -Output "$env:Temp_Folder" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope" -JobNumber "${{ github.run_number }}"
           
 
       #upload file
@@ -230,7 +230,7 @@ jobs:
         run: |
           Write-Host "Running UiPath Test Set..."
           $MY_FOLDER = "${{ steps.Find-Project-Folder-step.outputs.MY_FOLDER }}"
-          & "$env:GITHUB_WORKSPACE/DevOps-Scripts/Scrips/AIGI-Test.ps1" -Project_Path "TestSet-$env:ProjectNumber" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope"
+          & "$env:GITHUB_WORKSPACE/DevOps-Scripts/Scripts/Test.ps1" -Project_Path "TestSet-$env:ProjectNumber" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope"
           # Capture exit code
           $exitCode = $LASTEXITCODE
           Write-Host "Script exited with code: $exitCode"
@@ -284,7 +284,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Call PowerShell Deploy"
-          & "$env:GITHUB_WORKSPACE\\DevOps-Scripts\\Scrips\\AIGI-Deploy.ps1" -Project_Path "${{ runner.temp }}/Downloaded-Packages" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope"
+          & "$env:GITHUB_WORKSPACE\\DevOps-Scripts\\Scripts\\Deploy.ps1" -Project_Path "${{ runner.temp }}/Downloaded-Packages" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope"
     
     
     # Update in Dev Orchestrator PowerShell
@@ -292,7 +292,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Call PowerShell Update"
-          & "$env:GITHUB_WORKSPACE\\DevOps-Scripts\\Scrips\\AIGI-Update_All-UiPath.ps1" -ProcessNumber "$env:ProjectNumber" -client_id "$env:Dev_ORCH_CLIENT_ID" -client_secret "$env:Dev_ORCH_USER_KEY" -Tenant "$env:Tenant"
+          & "$env:GITHUB_WORKSPACE\\DevOps-Scripts\\Scripts\\Update_All-UiPath.ps1" -ProcessNumber "$env:ProjectNumber" -client_id "$env:Dev_ORCH_CLIENT_ID" -client_secret "$env:Dev_ORCH_USER_KEY" -Tenant "$env:Tenant"
 
 
 
@@ -386,7 +386,7 @@ jobs:
           Write-Host "Deploying .yxzp file from $MY_FOLDER to Alteryx Server"
           # Example placeholder: Call Alteryx CLI or API for deployment
           
-          & "$env:GITHUB_WORKSPACE\DevOps-Scripts\Scrips\AIGI-Alteryx-Deploy.ps1" -ClientId "$env:Dev_ALteryx_Key" -ClientSecret "$env:Dev_ALteryx_Secret" -WorkflowFilePath "$env:FILE_PATH" -ProjectNumber "$env:ProjectNumber" -WorkflowName "$env:workflow_name" -WorkflowCredentials "$env:workflow_credentials"
+          & "$env:GITHUB_WORKSPACE\DevOps-Scripts\Scripts\Alteryx-Deploy.ps1" -ClientId "$env:Dev_ALteryx_Key" -ClientSecret "$env:Dev_ALteryx_Secret" -WorkflowFilePath "$env:FILE_PATH" -ProjectNumber "$env:ProjectNumber" -WorkflowName "$env:workflow_name" -WorkflowCredentials "$env:workflow_credentials"
 
 
 
@@ -547,7 +547,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Call PowerShell Deploy"
-          & "$env:GITHUB_WORKSPACE\\DevOps-Scripts\\Scrips\\AIGI-Deploy.ps1" -Project_Path "${{ runner.temp }}/Downloaded-Packages" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant2" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope"
+          & "$env:GITHUB_WORKSPACE\\DevOps-Scripts\\Scripts\\Deploy.ps1" -Project_Path "${{ runner.temp }}/Downloaded-Packages" -libraryOrchestratorUrl "$env:ORCH_URL" -libraryOrchestratorTenant "$env:Tenant2" -libraryOrchestratorAccountForApp "$env:AccountForApp" -libraryOrchestratorApplicationId "$env:Dev_ORCH_CLIENT_ID" -libraryOrchestratorApplicationSecret "$env:Dev_ORCH_USER_KEY" -libraryOrchestratorApplicationScope "$env:ApplicationScope"
       
       
     #Update Process in Orchestrator--------------------------------------------
@@ -561,7 +561,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Call PowerShell Update"
-          & "$env:GITHUB_WORKSPACE\\DevOps-Scripts\\Scrips\\AIGI-Update_All-UiPath.ps1" -ProcessNumber "$env:ProjectNumber" -client_id "$env:Dev_ORCH_CLIENT_ID" -client_secret "$env:Dev_ORCH_USER_KEY" -Tenant "$env:Tenant2"
+          & "$env:GITHUB_WORKSPACE\\DevOps-Scripts\\Scripts\\Update_All-UiPath.ps1" -ProcessNumber "$env:ProjectNumber" -client_id "$env:Dev_ORCH_CLIENT_ID" -client_secret "$env:Dev_ORCH_USER_KEY" -Tenant "$env:Tenant2"
 
 
 
@@ -661,7 +661,7 @@ jobs:
           Write-Host "Deploying .yxzp file from $MY_FOLDER to Alteryx Server"
           # Example placeholder: Call Alteryx CLI or API for deployment
           
-          & "$env:GITHUB_WORKSPACE\DevOps-Scripts\Scrips\AIGI-Alteryx-Deploy.ps1" -ClientId "$env:Prod_ALteryx_Key" -ClientSecret "$env:Prod_ALteryx_Secret" -WorkflowFilePath "$env:FILE_PATH" -ProjectNumber "$env:ProjectNumber" -WorkflowName "$env:workflow_name" -Environment  "prod" -WorkflowCredentials "$env:workflow_credentials"
+          & "$env:GITHUB_WORKSPACE\DevOps-Scripts\Scripts\Alteryx-Deploy.ps1" -ClientId "$env:Prod_ALteryx_Key" -ClientSecret "$env:Prod_ALteryx_Secret" -WorkflowFilePath "$env:FILE_PATH" -ProjectNumber "$env:ProjectNumber" -WorkflowName "$env:workflow_name" -Environment  "prod" -WorkflowCredentials "$env:workflow_credentials"
 
 
 
